@@ -1,0 +1,159 @@
+# ============================================================
+# TelcOS Lite – Docker Compose
+# Services: Zookeeper · Kafka · ChromaDB · Mock SSH Device · API
+# ============================================================
+
+networks:
+  telcos_net:
+    driver: bridge
+
+volumes:
+  chroma_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_log:
+
+services:
+
+  # ----------------------------------------------------------
+  # Zookeeper – Kafka coordination
+  # ----------------------------------------------------------
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: telcos_zookeeper
+    restart: unless-stopped
+    networks:
+      - telcos_net
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
+      KAFKA_OPTS: "-Dzookeeper.4lw.commands.whitelist=*"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_log:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # Kafka – Event streaming backbone
+  # ----------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: telcos_kafka
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - telcos_net
+    ports:
+      - "9092:9092"       # host access for local dev
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ----------------------------------------------------------
+  # ChromaDB – Vector store for RAG / policy retrieval
+  # ----------------------------------------------------------
+  chromadb:
+    image: chromadb/chroma:0.5.0
+    container_name: telcos_chromadb
+    restart: unless-stopped
+    networks:
+      - telcos_net
+    ports:
+      - "8001:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_data:/chroma/chroma
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # Mock SSH Device – Simulated network element for Netmiko
+  # Runs OpenSSH inside a minimal Alpine container.
+  # Default creds: admin / telcos123
+  # ----------------------------------------------------------
+  mock_ssh_device:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: telcos_mock_ssh
+    restart: unless-stopped
+    networks:
+      - telcos_net
+    ports:
+      - "2222:2222"
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: UTC
+      USER_NAME: admin
+      USER_PASSWORD: telcos123
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------
+  # TelcOS Lite API – FastAPI application
+  # ----------------------------------------------------------
+  telcos_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telcos_api
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    networks:
+      - telcos_net
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      SSH_DEVICE_HOST: mock_ssh_device
+      SSH_DEVICE_PORT: 2222
+      SSH_DEVICE_USER: admin
+      SSH_DEVICE_PASSWORD: telcos123
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5

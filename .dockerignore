@@ -1,0 +1,27 @@
+# Ignore virtual environments
+telcvenv/
+venv/
+.venv/
+env/
+
+# Ignore Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Ignore Git directory and config
+.git/
+.gitignore
+
+# Ignore local environment files and local configuration
+.env
+.envrc
+
+# Ignore tests, logs, and development docs
+tests/
+*.log
+README.md
+LICENSE
+.idea/
+.vscode/
