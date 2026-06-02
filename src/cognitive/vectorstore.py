@@ -20,8 +20,8 @@ from typing import Final, Sequence
 import chromadb
 from chromadb import Collection, PersistentClient
 from chromadb.config import Settings
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
     TextLoader,
     UnstructuredMarkdownLoader,
@@ -49,7 +49,7 @@ SUPPORTED_EXTENSIONS: Final[frozenset[str]] = frozenset({".txt", ".md", ".pdf"})
 # ---------------------------------------------------------------------------
 _LOADER_MAP: dict[str, type] = {
     ".txt": TextLoader,
-    ".md": UnstructuredMarkdownLoader,
+    ".md": TextLoader,
     ".pdf": PyPDFLoader,
 }
 

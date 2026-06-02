@@ -356,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     print(
-        f"\n✓ Ingested {total_chunks} chunk(s) from {len(files)} file(s) "
+        f"\n[OK] Ingested {total_chunks} chunk(s) from {len(files)} file(s) "
         f"into collection '{args.collection}' "
         f"(total vectors in store: {final_count})."
     )
